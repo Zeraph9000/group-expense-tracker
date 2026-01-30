@@ -1,5 +1,6 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { randomBytes } from 'crypto';
 
 @Injectable()
 export class GroupsService {
@@ -50,5 +51,34 @@ export class GroupsService {
       role: m.role,
       ...m.group,
     }));
+  }
+
+  async createInvite(groupId: string, createdById: string) {
+    // Check if group exists
+    const group = await this.prisma.group.findUnique({
+      where: { id: groupId },
+    });
+
+    if (!group) {
+      throw new ForbiddenException({
+        error: 'INVALID_GROUP_ID',
+        message: 'Invalid group id is given'
+      });
+    }
+
+    const token = randomBytes(24).toString('hex'); // 48 chars
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 1 week (MVP)
+
+    const invite = await this.prisma.groupInvite.create({
+      data: {
+        groupId,
+        token,
+        createdById,
+        expiresAt,
+      },
+      select: { token: true, expiresAt: true },
+    });
+
+    return invite;
   }
 }

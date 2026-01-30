@@ -37,7 +37,10 @@ export class GroupMemberGuard implements CanActivate {
     });
 
     if (!membership) {
-      throw new ForbiddenException('You are not a member of this group');
+      throw new ForbiddenException({
+        error: 'INVALID_GROUP_ID',
+        message: 'User is not the owner or creator of the group'
+      });
     }
 
     const requiredRoles =
