@@ -28,7 +28,10 @@ export class GroupMemberGuard implements CanActivate {
 
     const groupId = (req.params as any)?.groupId as string | undefined;
     if (!groupId) {
-      throw new ForbiddenException('Missing groupId param');
+      throw new ForbiddenException({
+        error: 'INVALID_GROUP_ID',
+        message: 'Invalid group id is given'
+      });
     }
 
     const membership = await this.prisma.groupMember.findUnique({
