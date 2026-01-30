@@ -5,7 +5,7 @@
   "compilerOptions": {
     "deleteOutDir": true,
     "assets": [
-      {"include": "../swagger.yaml", "outDir": "dist"}
+      "swagger.yaml"
     ]
   }
 }

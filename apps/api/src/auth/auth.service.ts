@@ -20,11 +20,17 @@ export class AuthService {
   async register(dto: RegisterDto) {
     const email = dto.email.trim().toLowerCase();
 
+    // Check if email is already in use
     const existing = await this.prisma.user.findUnique({ where: { email } });
-    if (existing) throw new BadRequestException('Email already in use');
+    if (existing) { 
+      throw new BadRequestException({
+        error: 'INVALID_EMAIL',
+        message: 'Email already in use',
+      });
+    }
 
+    // Hash password and create user
     const hash = await bcrypt.hash(dto.password, 12);
-
     const user = await this.prisma.user.create({
       data: {
         email,
@@ -34,17 +40,29 @@ export class AuthService {
       select: { id: true, email: true, name: true, createdAt: true },
     });
 
-    return user;
+    return { id: user.id };
   }
 
   async login(dto: LoginDto) {
     const email = dto.email.trim().toLowerCase();
 
+    // Check if the email given is used by a user
     const user = await this.prisma.user.findUnique({ where: { email } });
-    if (!user) throw new UnauthorizedException('Invalid credentials');
+    if (!user) {
+      throw new BadRequestException({
+        error: 'INVALID_CREDENTIALS',
+        message: 'Email does not exists',
+      });
+    }
 
+    // Check if the password given matches
     const ok = await bcrypt.compare(dto.password, user.password);
-    if (!ok) throw new UnauthorizedException('Invalid credentials');
+    if (!ok) {
+      throw new BadRequestException({
+        error: 'INVALID_CREDENTIALS',
+        message: 'Wrong password given',
+      });
+    }
 
     const expiresAt = new Date(Date.now() + this.sessionTtlDays() * 24 * 60 * 60 * 1000);
 
@@ -58,6 +76,7 @@ export class AuthService {
 
   async logout(sessionId: string) {
     await this.prisma.session.deleteMany({ where: { id: sessionId } });
+    return {};
   }
 
   async getUserForSession(sessionId: string) {
