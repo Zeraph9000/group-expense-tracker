@@ -1,0 +1,99 @@
+import { Body, Controller, Get, HttpCode, Post, Req } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiCookieAuth } from '@nestjs/swagger';
+import type { Request } from 'express';
+import { Auth } from '../auth/decorators/auth.decorator';
+import { GroupsService } from './groups.service';
+import { CreateGroupDto } from './dto/create-group.dto';
+
+@ApiTags('groups')
+@Controller('v1/groups')
+export class GroupsController {
+  constructor(private readonly groups: GroupsService) {}
+
+  @Auth()
+  @Post()
+  @HttpCode(200)
+  @ApiCookieAuth()
+  @ApiOperation({ summary: 'Create a new group' })
+  @ApiResponse({
+    status: 200,
+    description: 'Group successfully created',
+    schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', example: 'cm812grp123' },
+        name: { type: 'string', example: 'Weekend Trip' },
+        createdAt: { type: 'string', format: 'date-time', example: '2026-01-30T21:30:00.000Z' },
+      }
+    }
+  })
+  @ApiResponse({
+    status: 400,
+    description: `If any of the following are true:
+- **INVALID_NAME** 
+  - Name is less than 2 characters`,
+    schema: {
+      type: 'object',
+      properties: {
+        error: { type: 'string', example: 'ERROR_TYPE' },
+        message: { type: 'string', example: 'Descriptive error message' }
+      }
+    }
+  })
+  @ApiResponse({
+    status: 401,
+    description: `If any of the following are true:
+- **INVALID_SESSION**
+  - User is not logged in`,
+    schema: {
+      type: 'object',
+      properties: {
+        error: { type: 'string', example: 'ERROR_TYPE' },
+        message: { type: 'string', example: 'Descriptive error message' }
+      }
+    }
+  })
+  async create(@Req() req: Request, @Body() dto: CreateGroupDto) {
+    const user = (req as any).user as { id: string };
+    return this.groups.createGroup(user.id, dto.name);
+  }
+
+  @Auth()
+  @Get()
+  @HttpCode(200)
+  @ApiCookieAuth()
+  @ApiOperation({ summary: 'Get all groups the current user is a member of' })
+  @ApiResponse({
+    status: 200,
+    description: 'List of groups retrieved successfully',
+    schema: {
+      type: 'array',
+        items: {
+            type: 'object',
+            properties: {
+            role: { type: 'string', example: 'OWNER' },
+            id: { type: 'string', example: 'cm812mem123' },
+            name: { type: 'string', example: 'Weekend Trip' },
+            createdAt: { type: 'string', format: 'date-time', example: '2026-02-28T10:30:00.000Z' },
+            }
+        }
+    }
+  })
+  @ApiResponse({
+    status: 401,
+    description: `If any of the following are true:
+- **INVALID_SESSION**
+  - User is not logged in`,
+    schema: {
+      type: 'object',
+      properties: {
+        error: { type: 'string', example: 'ERROR_TYPE' },
+        message: { type: 'string', example: 'Descriptive error message' }
+      }
+    }
+  })
+  async getList(@Req() req: Request) {
+    const user: { id: string } = (req as any).user;
+    return this.groups.listMyGroups(user.id);
+  }
+}
