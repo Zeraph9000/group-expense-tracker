@@ -1,9 +1,10 @@
-import { Body, Controller, Get, HttpCode, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginDto, RegisterDto } from './dto/auth.dto';
 import type { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { ApiTags, ApiOperation, ApiResponse, ApiCookieAuth } from '@nestjs/swagger';
+import { AuthGuard } from './guards/auth.guard';
 
 @ApiTags('auth')
 @Controller('v1/auth')
@@ -156,5 +157,11 @@ export class AuthController {
 
     const result = await this.auth.getUserForSession(sid);
     return { user: result?.user ?? null };
+  }
+
+  @Get('protected')
+  @UseGuards(AuthGuard)
+  async protected(@Req() req: Request) {
+    return { ok: true, user: (req as any).user };
   }
 }
