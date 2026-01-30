@@ -5,6 +5,7 @@ import type { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { ApiTags, ApiOperation, ApiResponse, ApiCookieAuth } from '@nestjs/swagger';
 import { AuthGuard } from './guards/auth.guard';
+import { Auth } from './decorators/auth.decorator';
 
 @ApiTags('auth')
 @Controller('v1/auth')
@@ -109,6 +110,7 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(200)
+  @Auth()
   @ApiOperation({ summary: 'Logout user and destroy session' })
   @ApiCookieAuth('cookie')
   @ApiResponse({ 
@@ -118,6 +120,19 @@ export class AuthController {
       type: 'object',
       properties: {
         ok: { type: 'boolean', example: true }
+      }
+    }
+  })
+  @ApiResponse({ 
+    status: 401, 
+    description: `If any of the following are true:
+- **INVALID_SESSION**
+  - User is not logged in`,
+    schema: {
+      type: 'object',
+      properties: {
+        error: { type: 'string', example: 'ERROR_TYPE' },
+        message: { type: 'string', example: 'Descriptive error message' }
       }
     }
   })
@@ -160,7 +175,7 @@ export class AuthController {
   }
 
   @Get('protected')
-  @UseGuards(AuthGuard)
+  @Auth()
   async protected(@Req() req: Request) {
     return { ok: true, user: (req as any).user };
   }

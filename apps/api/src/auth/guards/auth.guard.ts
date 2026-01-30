@@ -16,13 +16,19 @@ export class AuthGuard implements CanActivate {
     const sessionId = request.cookies?.[cookieName];
 
     if (!sessionId) {
-      throw new UnauthorizedException('Not authenticated');
+      throw new UnauthorizedException({
+        error: 'INVALID_SESSION',
+        message: 'Authentication required',
+      });
     }
 
     const result = await this.authService.getUserForSession(sessionId);
     
     if (!result) {
-      throw new UnauthorizedException('Invalid session');
+      throw new UnauthorizedException({
+        error: 'INVALID_SESSION',
+        message: 'Session has expired or is invalid',
+      });
     }
 
     // Attach user to request object
