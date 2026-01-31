@@ -248,14 +248,22 @@ export class ExpensesService {
   async getSettleUpPlan(groupId: string) {
     const balances = await this.getGroupBalances(groupId);
 
-    // Convert to two lists (use absolute cents)
+    // Lookup table for display info
+    const userInfo = new Map<
+      string,
+      { name: string | null; email: string }
+    >();
+
+    for (const b of balances) {
+      userInfo.set(b.userId, { name: b.name ?? null, email: b.email });
+    }
+
+    // Build lists (amounts are absolute cents)
     const debtors = balances
       .filter((b) => b.balanceCents < 0)
       .map((b) => ({
         userId: b.userId,
         remainingCents: -b.balanceCents,
-        name: b.name,
-        email: b.email,
       }));
 
     const creditors = balances
@@ -263,13 +271,15 @@ export class ExpensesService {
       .map((b) => ({
         userId: b.userId,
         remainingCents: b.balanceCents,
-        name: b.name,
-        email: b.email,
       }));
 
     const transfers: Array<{
       fromUserId: string;
+      fromName: string | null;
+      fromEmail: string;
       toUserId: string;
+      toName: string | null;
+      toEmail: string;
       amountCents: number;
     }> = [];
 
@@ -283,9 +293,21 @@ export class ExpensesService {
       const amount = Math.min(d.remainingCents, c.remainingCents);
 
       if (amount > 0) {
+        const from = userInfo.get(d.userId);
+        const to = userInfo.get(c.userId);
+
+        // These should always exist because balances come from group members
+        if (!from || !to) {
+          throw new Error('Invariant failed: missing user info for settle-up plan');
+        }
+
         transfers.push({
           fromUserId: d.userId,
+          fromName: from.name,
+          fromEmail: from.email,
           toUserId: c.userId,
+          toName: to.name,
+          toEmail: to.email,
           amountCents: amount,
         });
 
@@ -298,13 +320,14 @@ export class ExpensesService {
     }
 
     return {
-      transfers,
+      // Keep balances too (useful for UI and debugging)
       balances: balances.map((b) => ({
         userId: b.userId,
-        balanceCents: b.balanceCents,
         name: b.name,
         email: b.email,
+        balanceCents: b.balanceCents,
       })),
+      transfers,
     };
   }
 
