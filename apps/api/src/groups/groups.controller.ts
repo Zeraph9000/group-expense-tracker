@@ -7,11 +7,15 @@ import { CreateGroupDto } from './dto/create-group.dto';
 import { GroupAuth } from './decorators/group-auth.decorator';
 import { GroupRoleRequired } from './decorators/group-role.decorator';
 import { GroupRole } from '@prisma/client';
+import { ExpensesService } from 'src/expenses/expenses.service';
 
 @ApiTags('groups')
 @Controller('v1/groups')
 export class GroupsController {
-  constructor(private readonly groups: GroupsService) {}
+  constructor(
+    private readonly groups: GroupsService,
+    private readonly expenses: ExpensesService
+  ) {}
 
   @Auth()
   @Post()
@@ -148,4 +152,11 @@ export class GroupsController {
     const user = (req as any).user as { id: string };
     return this.groups.createInvite(groupId, user.id);
   }
+
+  @GroupAuth()
+  @Get(':groupId/settle/suggestions')
+  async settleSuggestions(@Param('groupId') groupId: string) {
+    return this.expenses.getSettleUpPlan(groupId);
+  }
+
 }

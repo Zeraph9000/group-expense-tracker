@@ -174,52 +174,138 @@ export class ExpensesService {
 
 
   async getGroupBalances(groupId: string) {
-  // Get members
-  const members = await this.prisma.groupMember.findMany({
-    where: { groupId },
-    select: { userId: true, user: { select: { email: true, name: true } } },
-    orderBy: { joinedAt: 'asc' },
-  });
+    // Get members
+    const members = await this.prisma.groupMember.findMany({
+      where: { groupId },
+      select: { userId: true, user: { select: { email: true, name: true } } },
+      orderBy: { joinedAt: 'asc' },
+    });
 
-  // Map: userId -> { paid, owed }
-  const paid = new Map<string, number>();
-  const owed = new Map<string, number>();
-  for (const m of members) {
-    paid.set(m.userId, 0);
-    owed.set(m.userId, 0);
-  }
-
-  // Fetch all expenses + splits for group
-  const expenses = await this.prisma.expense.findMany({
-    where: { groupId },
-    select: {
-      amountCents: true,
-      paidById: true,
-      splits: { select: { userId: true, amountCents: true } },
-    },
-  });
-
-  // Get the sum of expenses and the splits
-  for (const e of expenses) {
-    paid.set(e.paidById, (paid.get(e.paidById) ?? 0) + e.amountCents);
-
-    for (const s of e.splits) {
-      owed.set(s.userId, (owed.get(s.userId) ?? 0) + s.amountCents);
+    // Map: userId -> { paid, owed }
+    const paid = new Map<string, number>();
+    const owed = new Map<string, number>();
+    const settleDelta = new Map<string, number>();
+    for (const m of members) {
+      paid.set(m.userId, 0);
+      owed.set(m.userId, 0);
+      settleDelta.set(m.userId, 0);
     }
+
+    // Fetch all expenses + splits for group
+    const expenses = await this.prisma.expense.findMany({
+      where: { groupId },
+      select: {
+        amountCents: true,
+        paidById: true,
+        splits: { select: { userId: true, amountCents: true } },
+      },
+    });
+
+    // Get the sum of expenses and the splits
+    for (const e of expenses) {
+      paid.set(e.paidById, (paid.get(e.paidById) ?? 0) + e.amountCents);
+
+      for (const s of e.splits) {
+        owed.set(s.userId, (owed.get(s.userId) ?? 0) + s.amountCents);
+      }
+    }
+
+    // Get the settlements that are already paid
+    const settlements = await this.prisma.settlement.findMany({
+      where: { groupId },
+      select: { fromUserId: true, toUserId: true, amountCents: true },
+    });
+
+    for (const st of settlements) {
+      settleDelta.set(
+        st.fromUserId,
+        (settleDelta.get(st.fromUserId) ?? 0) + st.amountCents,
+      );
+      settleDelta.set(
+        st.toUserId,
+        (settleDelta.get(st.toUserId) ?? 0) - st.amountCents,
+      );
+    }
+
+    // Compute balances
+    return members.map((m) => {
+      const p = paid.get(m.userId) ?? 0;
+      const o = owed.get(m.userId) ?? 0;
+      const sd = settleDelta.get(m.userId) ?? 0;
+      const balance = (p - o) + sd;
+      return {
+        userId: m.userId,
+        name: m.user.name,
+        email: m.user.email,
+        paidCents: p,
+        owedCents: o,
+        settlementDeltaCents: sd,
+        balanceCents: balance, // + receive, - pay
+      };
+    });
   }
 
-  // Compute balances
-  return members.map((m) => {
-    const p = paid.get(m.userId) ?? 0;
-    const o = owed.get(m.userId) ?? 0;
+  async getSettleUpPlan(groupId: string) {
+    const balances = await this.getGroupBalances(groupId);
+
+    // Convert to two lists (use absolute cents)
+    const debtors = balances
+      .filter((b) => b.balanceCents < 0)
+      .map((b) => ({
+        userId: b.userId,
+        remainingCents: -b.balanceCents,
+        name: b.name,
+        email: b.email,
+      }));
+
+    const creditors = balances
+      .filter((b) => b.balanceCents > 0)
+      .map((b) => ({
+        userId: b.userId,
+        remainingCents: b.balanceCents,
+        name: b.name,
+        email: b.email,
+      }));
+
+    const transfers: Array<{
+      fromUserId: string;
+      toUserId: string;
+      amountCents: number;
+    }> = [];
+
+    let i = 0; // debtor index
+    let j = 0; // creditor index
+
+    while (i < debtors.length && j < creditors.length) {
+      const d = debtors[i];
+      const c = creditors[j];
+
+      const amount = Math.min(d.remainingCents, c.remainingCents);
+
+      if (amount > 0) {
+        transfers.push({
+          fromUserId: d.userId,
+          toUserId: c.userId,
+          amountCents: amount,
+        });
+
+        d.remainingCents -= amount;
+        c.remainingCents -= amount;
+      }
+
+      if (d.remainingCents === 0) i++;
+      if (c.remainingCents === 0) j++;
+    }
+
     return {
-      userId: m.userId,
-      name: m.user.name,
-      email: m.user.email,
-      paidCents: p,
-      owedCents: o,
-      balanceCents: p - o, // + means should receive, - means owes
+      transfers,
+      balances: balances.map((b) => ({
+        userId: b.userId,
+        balanceCents: b.balanceCents,
+        name: b.name,
+        email: b.email,
+      })),
     };
-  });
   }
+
 }

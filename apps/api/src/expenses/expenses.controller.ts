@@ -210,7 +210,8 @@ export class ExpensesController {
           email: { type: 'string', example: 'user@example.com' },
           paidCents: { type: 'number', example: 5000, description: 'Total amount paid by this user' },
           owedCents: { type: 'number', example: 2500, description: 'Total amount owed by this user' },
-          balanceCents: { type: 'number', example: 2500, description: 'Net balance (positive = owed money, negative = owes money)' }
+          balanceCents: { type: 'number', example: 2500, description: 'Net balance (positive = owed money, negative = owes money)' },
+          settlementDeltaCents: { type: 'number', example: 2500, description: 'Total amount settled by the user' }
         }
       }
 

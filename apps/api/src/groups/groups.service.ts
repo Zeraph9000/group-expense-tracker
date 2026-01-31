@@ -1,10 +1,15 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, Get, Injectable, Param } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { randomBytes } from 'crypto';
+import { ExpensesService } from '../expenses/expenses.service';
+import { GroupAuth } from './decorators/group-auth.decorator';
 
 @Injectable()
 export class GroupsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly expensesService: ExpensesService
+  ) {}
 
   async createGroup(userId: string, name: string) {
     const trimmed = name.trim();
@@ -81,4 +86,11 @@ export class GroupsService {
 
     return invite;
   }
+
+  @GroupAuth()
+  @Get(':groupId/settle/suggestions')
+  async settleSuggestions(@Param('groupId') groupId: string) {
+    return this.expensesService.getSettleUpPlan(groupId);
+  }
+
 }
