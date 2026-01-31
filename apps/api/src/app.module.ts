@@ -29,6 +29,8 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { GroupsModule } from './groups/groups.module';
 import { InvitesModule } from './invites/invites.module';
+import { ExpensesModule } from './expenses/expenses.module';
+import { SettlementsModule } from './settlements/settlements.module';
 
 @Module({
   imports: [
@@ -36,7 +38,9 @@ import { InvitesModule } from './invites/invites.module';
     PrismaModule,
     AuthModule,
     GroupsModule,
-    InvitesModule
+    InvitesModule,
+    ExpensesModule,
+    SettlementsModule
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -4,7 +4,9 @@ import { ValidationError } from 'class-validator';
 const errorCodeMap: Record<string, string> = {
   email: 'INVALID_EMAIL',
   password: 'INVALID_PASSWORD',
-  name: 'INVALID_NAME'
+  name: 'INVALID_NAME',
+  description: 'INVALID_DESCRIPTION',
+  amountCents: 'INVALID_EXPENSE'
 };
 
 /**
