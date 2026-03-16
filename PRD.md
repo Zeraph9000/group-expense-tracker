@@ -8,7 +8,7 @@
 **Status:** Locked for implementation  
 
 ### Tech Stack (Locked)
-- **Frontend:** Next.js (Pages Router) + Tailwind CSS
+- **Frontend:** Next.js (Pages Router) + Tailwind CSS + shadcn/ui
 - **Backend:** NestJS (REST API)
 - **Database:** PostgreSQL (Supabase)
 - **ORM:** Prisma
