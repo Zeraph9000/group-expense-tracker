@@ -1,5 +1,4 @@
-import { useState, FormEvent } from 'react';
-import { GetServerSideProps } from 'next';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { apiClient, ApiError } from '@/lib/apiClient';
 import { Button } from '@/components/ui/button';
@@ -28,34 +27,65 @@ type User = {
   name: string | null;
 };
 
-type Props = {
-  groups: Group[];
-  user: User;
-};
-
 const roleColors: Record<string, string> = {
   OWNER: 'bg-indigo-100 text-indigo-700',
   ADMIN: 'bg-violet-100 text-violet-700',
   MEMBER: 'bg-slate-100 text-slate-600',
 };
 
-export default function GroupsPage({ groups: initialGroups, user }: Props) {
+function SkeletonCard() {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 flex items-center gap-3 animate-pulse">
+      <div className="w-9 h-9 rounded-xl bg-slate-200" />
+      <div className="flex-1 space-y-2">
+        <div className="h-4 bg-slate-200 rounded w-1/3" />
+        <div className="h-3 bg-slate-100 rounded w-1/5" />
+      </div>
+    </div>
+  );
+}
+
+export default function GroupsPage() {
   const router = useRouter();
-  const [groups, setGroups] = useState(initialGroups);
+  const [user, setUser] = useState<User | null>(null);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const [createLoading, setCreateLoading] = useState(false);
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const [{ user: me }, fetchedGroups] = await Promise.all([
+          apiClient<{ user: User | null }>('/auth/me'),
+          apiClient<Group[]>('/groups'),
+        ]);
+        if (!me) {
+          router.replace('/login');
+          return;
+        }
+        setUser(me);
+        setGroups(fetchedGroups);
+      } catch {
+        router.replace('/login');
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
+  }, [router]);
 
   async function handleLogout() {
     await apiClient('/auth/logout', { method: 'POST' });
     router.push('/login');
   }
 
-  async function handleCreateGroup(e: FormEvent) {
+  async function handleCreateGroup(e: React.SyntheticEvent) {
     e.preventDefault();
-    setError('');
-    setLoading(true);
+    setCreateError('');
+    setCreateLoading(true);
     try {
       const group = await apiClient<Group>('/groups', {
         method: 'POST',
@@ -65,9 +95,9 @@ export default function GroupsPage({ groups: initialGroups, user }: Props) {
       setName('');
       setOpen(false);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong.');
+      setCreateError(err instanceof ApiError ? err.message : 'Something went wrong.');
     } finally {
-      setLoading(false);
+      setCreateLoading(false);
     }
   }
 
@@ -78,9 +108,11 @@ export default function GroupsPage({ groups: initialGroups, user }: Props) {
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
           <span className="text-lg font-bold text-indigo-600 tracking-tight">SplitTab</span>
           <div className="flex items-center gap-3">
-            <span className="text-sm text-slate-500 hidden sm:block">
-              {user.name ?? user.email}
-            </span>
+            {user && (
+              <span className="text-sm text-slate-500 hidden sm:block">
+                {user.name ?? user.email}
+              </span>
+            )}
             <Button variant="ghost" size="sm" onClick={handleLogout} className="text-slate-500 gap-1.5">
               <LogOut size={14} /> Sign out
             </Button>
@@ -94,7 +126,7 @@ export default function GroupsPage({ groups: initialGroups, user }: Props) {
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Groups</h1>
             <p className="text-sm text-slate-500 mt-0.5">
-              {groups.length === 0 ? 'No groups yet' : `${groups.length} group${groups.length === 1 ? '' : 's'}`}
+              {loading ? '\u00a0' : groups.length === 0 ? 'No groups yet' : `${groups.length} group${groups.length === 1 ? '' : 's'}`}
             </p>
           </div>
 
@@ -118,24 +150,30 @@ export default function GroupsPage({ groups: initialGroups, user }: Props) {
                     autoFocus
                   />
                 </div>
-                {error && (
+                {createError && (
                   <p className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
-                    {error}
+                    {createError}
                   </p>
                 )}
                 <Button
                   type="submit"
-                  disabled={loading}
+                  disabled={createLoading}
                   className="w-full bg-indigo-600 hover:bg-indigo-700"
                 >
-                  {loading ? 'Creating...' : 'Create group'}
+                  {createLoading ? 'Creating...' : 'Create group'}
                 </Button>
               </form>
             </DialogContent>
           </Dialog>
         </div>
 
-        {groups.length === 0 ? (
+        {loading ? (
+          <div className="space-y-3">
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </div>
+        ) : groups.length === 0 ? (
           <div className="text-center py-24 border-2 border-dashed border-slate-200 rounded-2xl">
             <ReceiptText className="mx-auto mb-3 text-slate-300" size={40} />
             <p className="text-slate-700 font-medium">No groups yet</p>
@@ -180,22 +218,3 @@ export default function GroupsPage({ groups: initialGroups, user }: Props) {
     </div>
   );
 }
-
-export const getServerSideProps: GetServerSideProps = async (ctx) => {
-  const cookie = ctx.req.headers.cookie ?? '';
-
-  try {
-    const [groups, user] = await Promise.all([
-      apiClient<Group[]>('/groups', { cookie }),
-      apiClient<{ user: User | null }>('/auth/me', { cookie }),
-    ]);
-
-    if (!user.user) {
-      return { redirect: { destination: '/login', permanent: false } };
-    }
-
-    return { props: { groups, user: user.user } };
-  } catch {
-    return { redirect: { destination: '/login', permanent: false } };
-  }
-};

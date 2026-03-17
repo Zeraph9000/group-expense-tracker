@@ -1,7 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { GetServerSideProps } from 'next';
 import AuthLayout from '@/components/AuthLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,6 +14,12 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    apiClient<{ user: unknown }>('/auth/me')
+      .then(({ user }) => { if (user) router.replace('/groups'); })
+      .catch(() => {});
+  }, [router]);
 
   async function handleSubmit(e: React.SyntheticEvent) {
     e.preventDefault();
@@ -98,11 +103,3 @@ export default function RegisterPage() {
   );
 }
 
-export const getServerSideProps: GetServerSideProps = async (ctx) => {
-  const cookie = ctx.req.headers.cookie ?? '';
-  try {
-    const { user } = await apiClient<{ user: unknown }>('/auth/me', { cookie });
-    if (user) return { redirect: { destination: '/groups', permanent: false } };
-  } catch {}
-  return { props: {} };
-};

@@ -1,21 +1,36 @@
-import { useState } from 'react';
-import { GetServerSideProps } from 'next';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { apiClient, ApiError } from '@/lib/apiClient';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Users } from 'lucide-react';
 
-type Props = {
-  token: string;
-};
-
-export default function InvitePage({ token }: Props) {
+export default function InvitePage() {
   const router = useRouter();
+  const token = router.query.token as string | undefined;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    if (!token) return;
+    async function checkAuth() {
+      try {
+        const { user } = await apiClient<{ user: unknown }>('/auth/me');
+        if (!user) {
+          router.replace(`/login?redirect=/invite/${token}`);
+          return;
+        }
+        setReady(true);
+      } catch {
+        router.replace(`/login?redirect=/invite/${token}`);
+      }
+    }
+    checkAuth();
+  }, [token, router]);
 
   async function handleJoin() {
+    if (!token) return;
     setLoading(true);
     setError('');
     try {
@@ -26,7 +41,6 @@ export default function InvitePage({ token }: Props) {
       router.push(`/groups/${result.groupId}`);
     } catch (err) {
       if (err instanceof ApiError && err.error === 'INVALID_ROLE') {
-        // Already a member — just navigate to groups
         router.push('/groups');
       } else {
         setError(err instanceof ApiError ? err.message : 'Something went wrong.');
@@ -65,7 +79,7 @@ export default function InvitePage({ token }: Props) {
             <Button
               className="w-full bg-indigo-600 hover:bg-indigo-700"
               onClick={handleJoin}
-              disabled={loading}
+              disabled={loading || !ready}
             >
               {loading ? 'Joining...' : 'Join group'}
             </Button>
@@ -75,30 +89,3 @@ export default function InvitePage({ token }: Props) {
     </div>
   );
 }
-
-export const getServerSideProps: GetServerSideProps = async (ctx) => {
-  const { token } = ctx.params as { token: string };
-  const cookie = ctx.req.headers.cookie ?? '';
-
-  // Check if logged in — if not, redirect to login with a redirect back here
-  try {
-    const { user } = await apiClient<{ user: unknown }>('/auth/me', { cookie });
-    if (!user) {
-      return {
-        redirect: {
-          destination: `/login?redirect=/invite/${token}`,
-          permanent: false,
-        },
-      };
-    }
-  } catch {
-    return {
-      redirect: {
-        destination: `/login?redirect=/invite/${token}`,
-        permanent: false,
-      },
-    };
-  }
-
-  return { props: { token } };
-};
