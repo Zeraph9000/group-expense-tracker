@@ -1,6 +1,7 @@
-import { useState, FormEvent } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
+import { GetServerSideProps } from 'next';
 import AuthLayout from '@/components/AuthLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,7 +15,7 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: React.SyntheticEvent) {
     e.preventDefault();
     setError('');
     setLoading(true);
@@ -24,7 +25,8 @@ export default function LoginPage() {
         method: 'POST',
         body: { email, password },
       });
-      router.push('/groups');
+      const redirect = typeof router.query.redirect === 'string' ? router.query.redirect : '/groups';
+      router.push(redirect);
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
@@ -83,3 +85,12 @@ export default function LoginPage() {
     </AuthLayout>
   );
 }
+
+export const getServerSideProps: GetServerSideProps = async (ctx) => {
+  const cookie = ctx.req.headers.cookie ?? '';
+  try {
+    const { user } = await apiClient<{ user: unknown }>('/auth/me', { cookie });
+    if (user) return { redirect: { destination: '/groups', permanent: false } };
+  } catch {}
+  return { props: {} };
+};

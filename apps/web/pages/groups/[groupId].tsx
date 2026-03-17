@@ -1,4 +1,4 @@
-import { useState, FormEvent } from 'react';
+import { useState, useEffect } from 'react';
 import { GetServerSideProps } from 'next';
 import { useRouter } from 'next/router';
 import { apiClient, ApiError } from '@/lib/apiClient';
@@ -53,15 +53,18 @@ type Transfer = {
   amountCents: number;
 };
 
-type Props = {
-  groupId: string;
+type PageData = {
   groupName: string;
   userRole: string;
-  currentUserId: string;
   expenses: Expense[];
   settlements: Settlement[];
   members: Member[];
   transfers: Transfer[];
+};
+
+type Props = {
+  groupId: string;
+  currentUserId: string;
 };
 
 type Tab = 'expenses' | 'balances' | 'settlements';
@@ -78,21 +81,13 @@ function displayName(user: { name: string | null; email: string }): string {
 
 // ─── Page ────────────────────────────────────────────────────────────────────
 
-export default function GroupDetailPage({
-  groupId,
-  groupName,
-  userRole,
-  currentUserId,
-  expenses: initial_expenses,
-  settlements: initial_settlements,
-  members: initial_members,
-  transfers: initial_transfers,
-}: Props) {
+export default function GroupDetailPage({ groupId, currentUserId }: Props) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>('expenses');
+  const [data, setData] = useState<PageData | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Expenses state
-  const [expenses, setExpenses] = useState(initial_expenses);
+  // Expense form
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [expDesc, setExpDesc] = useState('');
   const [expAmount, setExpAmount] = useState('');
@@ -100,10 +95,7 @@ export default function GroupDetailPage({
   const [expError, setExpError] = useState('');
   const [expLoading, setExpLoading] = useState(false);
 
-  // Settlements state
-  const [settlements, setSettlements] = useState(initial_settlements);
-  const [members, setMembers] = useState(initial_members);
-  const [transfers, setTransfers] = useState(initial_transfers);
+  // Settlement form
   const [settlementOpen, setSettlementOpen] = useState(false);
   const [stlFrom, setStlFrom] = useState(currentUserId);
   const [stlTo, setStlTo] = useState('');
@@ -112,23 +104,48 @@ export default function GroupDetailPage({
   const [stlError, setStlError] = useState('');
   const [stlLoading, setStlLoading] = useState(false);
 
-  // Invite state
+  // Invite
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteToken, setInviteToken] = useState('');
   const [inviteLoading, setInviteLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  async function refreshBalances() {
+  async function fetchData() {
+    setLoading(true);
     try {
-      const result = await apiClient<{ balances: Member[]; transfers: Transfer[] }>(
-        `/groups/${groupId}/settle/suggestions`,
-      );
-      setMembers(result.balances);
-      setTransfers(result.transfers);
-    } catch {}
+      const [groups, expenses, settlements, settleData] = await Promise.all([
+        apiClient<Array<{ id: string; name: string; role: string }>>('/groups'),
+        apiClient<Expense[]>(`/groups/${groupId}/expenses`),
+        apiClient<Settlement[]>(`/groups/${groupId}/settlements`),
+        apiClient<{ balances: Member[]; transfers: Transfer[] }>(`/groups/${groupId}/settle/suggestions`),
+      ]);
+
+      const group = groups.find((g) => g.id === groupId);
+      if (!group) {
+        router.replace('/groups');
+        return;
+      }
+
+      setData({
+        groupName: group.name,
+        userRole: group.role,
+        expenses,
+        settlements,
+        members: settleData.balances,
+        transfers: settleData.transfers,
+      });
+    } catch {
+      router.replace('/groups');
+    } finally {
+      setLoading(false);
+    }
   }
 
-  async function handleAddExpense(e: FormEvent) {
+  useEffect(() => {
+    fetchData();
+  }, [groupId]);
+
+  async function handleAddExpense(e: React.SyntheticEvent) {
     e.preventDefault();
     setExpError('');
     setExpLoading(true);
@@ -141,13 +158,11 @@ export default function GroupDetailPage({
           paidById: expPaidBy,
         },
       });
-      const updated = await apiClient<Expense[]>(`/groups/${groupId}/expenses`);
-      setExpenses(updated);
       setExpDesc('');
       setExpAmount('');
       setExpPaidBy(currentUserId);
       setExpenseOpen(false);
-      await refreshBalances();
+      fetchData();
     } catch (err) {
       setExpError(err instanceof ApiError ? err.message : 'Something went wrong.');
     } finally {
@@ -155,12 +170,12 @@ export default function GroupDetailPage({
     }
   }
 
-  async function handleRecordSettlement(e: FormEvent) {
+  async function handleRecordSettlement(e: React.SyntheticEvent) {
     e.preventDefault();
     setStlError('');
     setStlLoading(true);
     try {
-      const settlement = await apiClient<Settlement>(`/groups/${groupId}/settlements`, {
+      await apiClient(`/groups/${groupId}/settlements`, {
         method: 'POST',
         body: {
           fromUserId: stlFrom,
@@ -169,13 +184,12 @@ export default function GroupDetailPage({
           note: stlNote || undefined,
         },
       });
-      setSettlements([settlement, ...settlements]);
       setStlFrom(currentUserId);
       setStlTo('');
       setStlAmount('');
       setStlNote('');
       setSettlementOpen(false);
-      await refreshBalances();
+      fetchData();
     } catch (err) {
       setStlError(err instanceof ApiError ? err.message : 'Something went wrong.');
     } finally {
@@ -220,7 +234,8 @@ export default function GroupDetailPage({
         : 'border-transparent text-slate-500 hover:text-slate-700'
     }`;
 
-  const isOwnerOrAdmin = userRole === 'OWNER' || userRole === 'ADMIN';
+  const isOwnerOrAdmin = data?.userRole === 'OWNER' || data?.userRole === 'ADMIN';
+  const members = data?.members ?? [];
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -230,12 +245,16 @@ export default function GroupDetailPage({
           <div className="flex items-center gap-2">
             <button
               onClick={() => router.push('/groups')}
-              className="text-slate-400 hover:text-slate-600 text-sm transition-colors"
+              className="flex items-center text-slate-400 hover:text-slate-600 text-sm transition-colors"
             >
               <ChevronLeft size={16} /> Groups
             </button>
             <span className="text-slate-200">/</span>
-            <h1 className="text-sm font-semibold text-slate-800">{groupName}</h1>
+            {data ? (
+              <h1 className="text-sm font-semibold text-slate-800">{data.groupName}</h1>
+            ) : (
+              <div className="h-4 w-24 bg-slate-200 rounded animate-pulse" />
+            )}
           </div>
           {isOwnerOrAdmin && (
             <Button variant="outline" size="sm" onClick={handleGetInvite} disabled={inviteLoading}>
@@ -254,23 +273,26 @@ export default function GroupDetailPage({
 
       <main className="max-w-2xl mx-auto px-4 py-8">
 
+        {/* ── LOADING SKELETONS ── */}
+        {loading && <SkeletonList />}
+
         {/* ── EXPENSES TAB ── */}
-        {tab === 'expenses' && (
+        {!loading && tab === 'expenses' && data && (
           <div>
             <div className="flex items-center justify-between mb-6">
               <p className="text-sm text-slate-500">
-                {expenses.length} expense{expenses.length !== 1 ? 's' : ''}
+                {data.expenses.length} expense{data.expenses.length !== 1 ? 's' : ''}
               </p>
               <Button className="bg-indigo-600 hover:bg-indigo-700 gap-1.5" onClick={() => setExpenseOpen(true)}>
                 <Plus size={15} /> Add Expense
               </Button>
             </div>
 
-            {expenses.length === 0 ? (
+            {data.expenses.length === 0 ? (
               <EmptyState icon={<ReceiptText size={36} className="text-slate-300" />} title="No expenses yet" sub="Add the first expense for this group." />
             ) : (
               <div className="space-y-3">
-                {expenses.map((exp) => (
+                {data.expenses.map((exp) => (
                   <Card key={exp.id} className="hover:shadow-sm transition-shadow">
                     <CardContent className="flex items-center justify-between py-4 px-5">
                       <div>
@@ -289,24 +311,22 @@ export default function GroupDetailPage({
         )}
 
         {/* ── BALANCES TAB ── */}
-        {tab === 'balances' && (
+        {!loading && tab === 'balances' && data && (
           <div className="space-y-8">
             <section>
               <SectionHeading>Net Balances</SectionHeading>
               <div className="space-y-2">
-                {members.map((m) => (
+                {data.members.map((m) => (
                   <Card key={m.userId}>
                     <CardContent className="flex items-center justify-between py-3 px-5">
                       <div className="flex items-center gap-3">
                         <Avatar name={m.name ?? m.email} />
                         <p className="text-sm font-medium text-slate-700">{m.name ?? m.email}</p>
                       </div>
-                      <span
-                        className={`text-sm font-semibold tabular-nums ${
-                          m.balanceCents > 0 ? 'text-emerald-600' :
-                          m.balanceCents < 0 ? 'text-red-500' : 'text-slate-400'
-                        }`}
-                      >
+                      <span className={`text-sm font-semibold tabular-nums ${
+                        m.balanceCents > 0 ? 'text-emerald-600' :
+                        m.balanceCents < 0 ? 'text-red-500' : 'text-slate-400'
+                      }`}>
                         {m.balanceCents === 0 ? 'settled up' :
                          m.balanceCents > 0 ? `+${fmt(m.balanceCents)}` :
                          `-${fmt(m.balanceCents)}`}
@@ -317,11 +337,11 @@ export default function GroupDetailPage({
               </div>
             </section>
 
-            {transfers.length > 0 && (
+            {data.transfers.length > 0 && (
               <section>
                 <SectionHeading>Suggested Payments</SectionHeading>
                 <div className="space-y-2">
-                  {transfers.map((t, i) => (
+                  {data.transfers.map((t, i) => (
                     <Card key={i}>
                       <CardContent className="flex items-center justify-between py-3 px-5">
                         <p className="text-sm text-slate-700">
@@ -330,14 +350,7 @@ export default function GroupDetailPage({
                           <span className="font-medium">{t.toName ?? t.toEmail}</span>
                           <span className="text-slate-400"> · {fmt(t.amountCents)}</span>
                         </p>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            openFromSuggestion(t);
-                            setTab('settlements');
-                          }}
-                        >
+                        <Button size="sm" variant="outline" onClick={() => { openFromSuggestion(t); setTab('settlements'); }}>
                           Record
                         </Button>
                       </CardContent>
@@ -347,29 +360,29 @@ export default function GroupDetailPage({
               </section>
             )}
 
-            {transfers.length === 0 && members.every((m) => m.balanceCents === 0) && (
+            {data.transfers.length === 0 && data.members.every((m) => m.balanceCents === 0) && (
               <EmptyState icon={<CheckCircle2 size={36} className="text-emerald-300" />} title="All settled up!" sub="No outstanding balances in this group." />
             )}
           </div>
         )}
 
         {/* ── SETTLEMENTS TAB ── */}
-        {tab === 'settlements' && (
+        {!loading && tab === 'settlements' && data && (
           <div>
             <div className="flex items-center justify-between mb-6">
               <p className="text-sm text-slate-500">
-                {settlements.length} settlement{settlements.length !== 1 ? 's' : ''}
+                {data.settlements.length} settlement{data.settlements.length !== 1 ? 's' : ''}
               </p>
               <Button className="bg-indigo-600 hover:bg-indigo-700 gap-1.5" onClick={() => setSettlementOpen(true)}>
                 <Plus size={15} /> Record Payment
               </Button>
             </div>
 
-            {settlements.length === 0 ? (
+            {data.settlements.length === 0 ? (
               <EmptyState icon={<Handshake size={36} className="text-slate-300" />} title="No settlements yet" sub="Record a payment to reduce balances." />
             ) : (
               <div className="space-y-3">
-                {settlements.map((s) => (
+                {data.settlements.map((s) => (
                   <Card key={s.id} className="hover:shadow-sm transition-shadow">
                     <CardContent className="flex items-center justify-between py-4 px-5">
                       <div>
@@ -379,9 +392,7 @@ export default function GroupDetailPage({
                           {displayName(s.toUser)}
                         </p>
                         {s.note && <p className="text-xs text-slate-400 mt-0.5 italic">{s.note}</p>}
-                        <p className="text-xs text-slate-400 mt-0.5">
-                          {new Date(s.createdAt).toLocaleDateString()}
-                        </p>
+                        <p className="text-xs text-slate-400 mt-0.5">{new Date(s.createdAt).toLocaleDateString()}</p>
                       </div>
                       <span className="font-semibold text-slate-700 tabular-nums">{fmt(s.amountCents)}</span>
                     </CardContent>
@@ -396,41 +407,19 @@ export default function GroupDetailPage({
       {/* ── Add Expense Dialog ── */}
       <Dialog open={expenseOpen} onOpenChange={setExpenseOpen}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Add expense</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Add expense</DialogTitle></DialogHeader>
           <form onSubmit={handleAddExpense} className="space-y-4 mt-2">
             <div className="space-y-1.5">
               <Label htmlFor="exp-desc">Description</Label>
-              <Input
-                id="exp-desc"
-                value={expDesc}
-                onChange={(e) => setExpDesc(e.target.value)}
-                placeholder="e.g. Dinner"
-                required
-                autoFocus
-              />
+              <Input id="exp-desc" value={expDesc} onChange={(e) => setExpDesc(e.target.value)} placeholder="e.g. Dinner" required autoFocus />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="exp-amount">Amount ($)</Label>
-              <Input
-                id="exp-amount"
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={expAmount}
-                onChange={(e) => setExpAmount(e.target.value)}
-                placeholder="0.00"
-                required
-              />
+              <Input id="exp-amount" type="number" min="0.01" step="0.01" value={expAmount} onChange={(e) => setExpAmount(e.target.value)} placeholder="0.00" required />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="exp-paid-by">Paid by</Label>
-              <NativeSelect
-                id="exp-paid-by"
-                value={expPaidBy}
-                onChange={(e) => setExpPaidBy(e.target.value)}
-              >
+              <NativeSelect id="exp-paid-by" value={expPaidBy} onChange={(e) => setExpPaidBy(e.target.value)}>
                 {members.map((m) => (
                   <option key={m.userId} value={m.userId}>
                     {m.name ?? m.email}{m.userId === currentUserId ? ' (you)' : ''}
@@ -449,9 +438,7 @@ export default function GroupDetailPage({
       {/* ── Record Settlement Dialog ── */}
       <Dialog open={settlementOpen} onOpenChange={setSettlementOpen}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Record payment</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Record payment</DialogTitle></DialogHeader>
           <form onSubmit={handleRecordSettlement} className="space-y-4 mt-2">
             <div className="space-y-1.5">
               <Label htmlFor="stl-from">From (who paid)</Label>
@@ -476,25 +463,11 @@ export default function GroupDetailPage({
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="stl-amount">Amount ($)</Label>
-              <Input
-                id="stl-amount"
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={stlAmount}
-                onChange={(e) => setStlAmount(e.target.value)}
-                placeholder="0.00"
-                required
-              />
+              <Input id="stl-amount" type="number" min="0.01" step="0.01" value={stlAmount} onChange={(e) => setStlAmount(e.target.value)} placeholder="0.00" required />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="stl-note">Note (optional)</Label>
-              <Input
-                id="stl-note"
-                value={stlNote}
-                onChange={(e) => setStlNote(e.target.value)}
-                placeholder="e.g. Bank transfer"
-              />
+              <Input id="stl-note" value={stlNote} onChange={(e) => setStlNote(e.target.value)} placeholder="e.g. Bank transfer" />
             </div>
             {stlError && <ErrorMsg>{stlError}</ErrorMsg>}
             <Button type="submit" disabled={stlLoading} className="w-full bg-indigo-600 hover:bg-indigo-700">
@@ -507,17 +480,11 @@ export default function GroupDetailPage({
       {/* ── Invite Dialog ── */}
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Invite link</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Invite link</DialogTitle></DialogHeader>
           <div className="mt-2 space-y-4">
             <p className="text-sm text-slate-500">Share this link. It expires in 7 days.</p>
             <div className="flex gap-2">
-              <Input
-                readOnly
-                value={inviteToken ? `${typeof window !== 'undefined' ? window.location.origin : ''}/invite/${inviteToken}` : ''}
-                className="text-xs"
-              />
+              <Input readOnly value={inviteToken ? `${typeof window !== 'undefined' ? window.location.origin : ''}/invite/${inviteToken}` : ''} className="text-xs" />
               <Button variant="outline" onClick={handleCopy} className="shrink-0">
                 {copied ? '✓ Copied' : 'Copy'}
               </Button>
@@ -529,14 +496,26 @@ export default function GroupDetailPage({
   );
 }
 
-// ─── Small reusable sub-components ───────────────────────────────────────────
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function SkeletonList() {
+  return (
+    <div className="space-y-3 animate-pulse">
+      {[...Array(4)].map((_, i) => (
+        <div key={i} className="bg-white rounded-xl border border-slate-200 px-5 py-4 flex items-center justify-between">
+          <div className="space-y-2">
+            <div className="h-4 w-40 bg-slate-200 rounded" />
+            <div className="h-3 w-24 bg-slate-100 rounded" />
+          </div>
+          <div className="h-4 w-14 bg-slate-200 rounded" />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
-  return (
-    <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">
-      {children}
-    </h2>
-  );
+  return <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">{children}</h2>;
 }
 
 function Avatar({ name }: { name: string }) {
@@ -559,10 +538,7 @@ function EmptyState({ icon, title, sub }: { icon: React.ReactNode; title: string
 
 function NativeSelect({ children, className, ...props }: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <select
-      className={`w-full border border-input bg-background rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring ${className ?? ''}`}
-      {...props}
-    >
+    <select className={`w-full border border-input bg-background rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring ${className ?? ''}`} {...props}>
       {children}
     </select>
   );
@@ -576,38 +552,16 @@ function ErrorMsg({ children }: { children: React.ReactNode }) {
   );
 }
 
-// ─── Server-side data fetching ────────────────────────────────────────────────
+// ─── Server-side: auth check only ────────────────────────────────────────────
 
 export const getServerSideProps: GetServerSideProps = async (ctx) => {
   const { groupId } = ctx.params as { groupId: string };
   const cookie = ctx.req.headers.cookie ?? '';
 
   try {
-    const [groups, user, expenses, settlements, settleData] = await Promise.all([
-      apiClient<Array<{ id: string; name: string; role: string }>>('/groups', { cookie }),
-      apiClient<{ user: { id: string; email: string; name: string | null } | null }>('/auth/me', { cookie }),
-      apiClient<Expense[]>(`/groups/${groupId}/expenses`, { cookie }),
-      apiClient<Settlement[]>(`/groups/${groupId}/settlements`, { cookie }),
-      apiClient<{ balances: Member[]; transfers: Transfer[] }>(`/groups/${groupId}/settle/suggestions`, { cookie }),
-    ]);
-
-    const group = groups.find((g) => g.id === groupId);
-    if (!group || !user.user) {
-      return { redirect: { destination: '/groups', permanent: false } };
-    }
-
-    return {
-      props: {
-        groupId,
-        groupName: group.name,
-        userRole: group.role,
-        currentUserId: user.user.id,
-        expenses,
-        settlements,
-        members: settleData.balances,
-        transfers: settleData.transfers,
-      },
-    };
+    const { user } = await apiClient<{ user: { id: string } | null }>('/auth/me', { cookie });
+    if (!user) return { redirect: { destination: '/login', permanent: false } };
+    return { props: { groupId, currentUserId: user.id } };
   } catch {
     return { redirect: { destination: '/login', permanent: false } };
   }
