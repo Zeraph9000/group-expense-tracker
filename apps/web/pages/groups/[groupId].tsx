@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { GetServerSideProps } from 'next';
 import { useRouter } from 'next/router';
 import { apiClient, ApiError } from '@/lib/apiClient';
 import { CheckCircle2, Link2, Plus, ReceiptText, Handshake, ChevronLeft } from 'lucide-react';
@@ -62,11 +61,6 @@ type PageData = {
   transfers: Transfer[];
 };
 
-type Props = {
-  groupId: string;
-  currentUserId: string;
-};
-
 type Tab = 'expenses' | 'balances' | 'settlements';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -81,8 +75,10 @@ function displayName(user: { name: string | null; email: string }): string {
 
 // ─── Page ────────────────────────────────────────────────────────────────────
 
-export default function GroupDetailPage({ groupId, currentUserId }: Props) {
+export default function GroupDetailPage() {
   const router = useRouter();
+  const groupId = router.query.groupId as string | undefined;
+  const [currentUserId, setCurrentUserId] = useState('');
   const [tab, setTab] = useState<Tab>('expenses');
   const [data, setData] = useState<PageData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -91,13 +87,13 @@ export default function GroupDetailPage({ groupId, currentUserId }: Props) {
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [expDesc, setExpDesc] = useState('');
   const [expAmount, setExpAmount] = useState('');
-  const [expPaidBy, setExpPaidBy] = useState(currentUserId);
+  const [expPaidBy, setExpPaidBy] = useState('');
   const [expError, setExpError] = useState('');
   const [expLoading, setExpLoading] = useState(false);
 
   // Settlement form
   const [settlementOpen, setSettlementOpen] = useState(false);
-  const [stlFrom, setStlFrom] = useState(currentUserId);
+  const [stlFrom, setStlFrom] = useState('');
   const [stlTo, setStlTo] = useState('');
   const [stlAmount, setStlAmount] = useState('');
   const [stlNote, setStlNote] = useState('');
@@ -110,17 +106,24 @@ export default function GroupDetailPage({ groupId, currentUserId }: Props) {
   const [inviteLoading, setInviteLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  async function fetchData() {
+  async function fetchData(gId: string) {
     setLoading(true);
     try {
-      const [groups, expenses, settlements, settleData] = await Promise.all([
+      const [{ user }, groups, expenses, settlements, settleData] = await Promise.all([
+        apiClient<{ user: { id: string } | null }>('/auth/me'),
         apiClient<Array<{ id: string; name: string; role: string }>>('/groups'),
-        apiClient<Expense[]>(`/groups/${groupId}/expenses`),
-        apiClient<Settlement[]>(`/groups/${groupId}/settlements`),
-        apiClient<{ balances: Member[]; transfers: Transfer[] }>(`/groups/${groupId}/settle/suggestions`),
+        apiClient<Expense[]>(`/groups/${gId}/expenses`),
+        apiClient<Settlement[]>(`/groups/${gId}/settlements`),
+        apiClient<{ balances: Member[]; transfers: Transfer[] }>(`/groups/${gId}/settle/suggestions`),
       ]);
 
-      const group = groups.find((g) => g.id === groupId);
+      if (!user) {
+        router.replace('/login');
+        return;
+      }
+      setCurrentUserId(user.id);
+
+      const group = groups.find((g) => g.id === gId);
       if (!group) {
         router.replace('/groups');
         return;
@@ -135,14 +138,15 @@ export default function GroupDetailPage({ groupId, currentUserId }: Props) {
         transfers: settleData.transfers,
       });
     } catch {
-      router.replace('/groups');
+      router.replace('/login');
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    fetchData();
+    if (!groupId) return;
+    fetchData(groupId);
   }, [groupId]);
 
   async function handleAddExpense(e: React.SyntheticEvent) {
@@ -162,7 +166,7 @@ export default function GroupDetailPage({ groupId, currentUserId }: Props) {
       setExpAmount('');
       setExpPaidBy(currentUserId);
       setExpenseOpen(false);
-      fetchData();
+      fetchData(groupId!);
     } catch (err) {
       setExpError(err instanceof ApiError ? err.message : 'Something went wrong.');
     } finally {
@@ -189,7 +193,7 @@ export default function GroupDetailPage({ groupId, currentUserId }: Props) {
       setStlAmount('');
       setStlNote('');
       setSettlementOpen(false);
-      fetchData();
+      fetchData(groupId!);
     } catch (err) {
       setStlError(err instanceof ApiError ? err.message : 'Something went wrong.');
     } finally {
@@ -552,17 +556,3 @@ function ErrorMsg({ children }: { children: React.ReactNode }) {
   );
 }
 
-// ─── Server-side: auth check only ────────────────────────────────────────────
-
-export const getServerSideProps: GetServerSideProps = async (ctx) => {
-  const { groupId } = ctx.params as { groupId: string };
-  const cookie = ctx.req.headers.cookie ?? '';
-
-  try {
-    const { user } = await apiClient<{ user: { id: string } | null }>('/auth/me', { cookie });
-    if (!user) return { redirect: { destination: '/login', permanent: false } };
-    return { props: { groupId, currentUserId: user.id } };
-  } catch {
-    return { redirect: { destination: '/login', permanent: false } };
-  }
-};
