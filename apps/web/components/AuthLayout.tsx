@@ -1,3 +1,5 @@
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+
 type Props = {
   title: string;
   children: React.ReactNode;
@@ -11,10 +13,14 @@ export default function AuthLayout({ title, children }: Props) {
           <h1 className="text-3xl font-bold text-indigo-600">SplitTab</h1>
           <p className="text-slate-500 mt-1 text-sm">Group expense tracking, simplified</p>
         </div>
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
-          <h2 className="text-xl font-semibold text-slate-800 mb-6">{title}</h2>
-          {children}
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>{title}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {children}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
