@@ -1,5 +1,8 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# Override root gitignore which blocks lib/ (Python artifact rule)
+!lib/
+
 # dependencies
 /node_modules
 /.pnp
