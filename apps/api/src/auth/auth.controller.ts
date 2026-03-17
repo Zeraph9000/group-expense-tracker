@@ -98,10 +98,11 @@ export class AuthController {
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
     const { user, session } = await this.auth.login(dto);
 
+    const secure = this.cookieSecure();
     res.cookie(this.cookieName(), session.id, {
       httpOnly: true,
-      sameSite: 'lax',
-      secure: this.cookieSecure(),
+      sameSite: secure ? 'none' : 'lax', // none required for cross-origin in production
+      secure,
       path: '/',
     });
 
