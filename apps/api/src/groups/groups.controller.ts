@@ -7,7 +7,7 @@ import { CreateGroupDto } from './dto/create-group.dto';
 import { GroupAuth } from './decorators/group-auth.decorator';
 import { GroupRoleRequired } from './decorators/group-role.decorator';
 import { GroupRole } from '@prisma/client';
-import { ExpensesService } from 'src/expenses/expenses.service';
+import { ExpensesService } from '../expenses/expenses.service';
 
 @ApiTags('groups')
 @Controller('v1/groups')

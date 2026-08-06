@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { SettlementsService } from './settlements.service';
 import { SettlementsController } from './settlements.controller';
-import { AuthModule } from 'src/auth/auth.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [AuthModule],
