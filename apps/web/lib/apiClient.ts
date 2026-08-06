@@ -1,4 +1,8 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+// In production the API is deployed alongside the web app behind one Vercel
+// domain (see /vercel.json), so requests are same-origin and this stays
+// empty unless NEXT_PUBLIC_API_URL is set. Locally the two run on separate
+// ports, hence the localhost fallback.
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:4000');
 
 type RequestOptions = {
   method?: string;
